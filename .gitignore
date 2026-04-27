@@ -1,5 +1,10 @@
 build/
 build-cmake/
+_skbuild/
+dist/
+*.egg-info/
+python/laph/_laph*.so
+python/laph/_laph*.pyd
 laph_cpp_v02/
 *.o
 *.out

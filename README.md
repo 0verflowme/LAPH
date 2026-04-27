@@ -6,7 +6,21 @@ and a sparse mod-8 phase hypergraph. Dense affine phases are lifted into explici
 latent variables so the exponential driver is the residual non-Clifford cut, not
 the visible qubit count.
 
-This repository promotes the C++ v0.2 prototype into a reusable C++17 library.
+This repository promotes the C++ v0.2 prototype into a reusable C++17 library
+with optional Python bindings.
+
+## Layout
+
+```text
+include/laph/types.hpp       value types and sparse algebra containers
+include/laph/phase.hpp       phase polynomial and Clifford summation API
+include/laph/solver.hpp      GF(2) solving and partition sums
+include/laph/optimizer.hpp   components, remapping, and backend selection
+include/laph/laph.hpp        public simulator API
+src/*.cpp                    compiled laph_core implementation
+bindings/python_module.cpp   pybind11 extension module
+python/laph/__init__.py      Python package facade
+```
 
 ## Current library surface
 
@@ -38,6 +52,13 @@ cmake --build build-cmake
 ctest --test-dir build-cmake --output-on-failure
 ```
 
+Install the Python package with:
+
+```bash
+pip install .
+python -c "import laph; print(laph.LAPH(1).h(0).stats())"
+```
+
 ## Minimal use
 
 ```cpp
@@ -67,6 +88,21 @@ locally and concatenate the visible bits:
 ```cpp
 std::mt19937_64 rng(123);
 auto sample = st.exact_sample_by_component(rng);
+```
+
+## Python Use
+
+```python
+import laph
+
+st = laph.LAPH(3)
+st.h(0).h(1).cnot(0, 2).t(2).cz(0, 1).h(2).ccz(0, 1, 2)
+st.compress()
+
+print(st.stats())
+print(st.exact_sample(seed=123))
+amp = st.amplitude(0b001)
+print(amp.real(), amp.imag())
 ```
 
 ## Notes
