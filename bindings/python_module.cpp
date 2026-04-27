@@ -95,6 +95,10 @@ PYBIND11_MODULE(_laph, m) {
                 "fabqnf_table_size"_a = s.fabqnf_table_size,
                 "fiber_active_terms"_a = s.fiber_active_terms,
                 "fiber_active_vars"_a = s.fiber_active_vars,
+                "max_component_rho"_a = s.max_component_rho,
+                "sum_component_table_size"_a = s.sum_component_table_size,
+                "max_component_kappa"_a = s.max_component_kappa,
+                "component_table_failures"_a = s.component_table_failures,
                 "components"_a = s.components
             );
         });

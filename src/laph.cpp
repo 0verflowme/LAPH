@@ -13,6 +13,50 @@
 
 namespace laph {
 
+namespace {
+
+struct ComponentStatsSummary {
+    int max_rho = 0;
+    long long sum_table_size = 0;
+    int max_kappa = 0;
+    int table_failures = 0;
+};
+
+ComponentStatsSummary component_fabqnf_summary(
+    const LAPH& st,
+    const std::vector<StateComponent>& components
+) {
+    ComponentStatsSummary out;
+
+    for (const StateComponent& component : components) {
+        if (component.qubits.empty()) continue;
+
+        LAPH local = st.component_view(component);
+        std::vector<int> cut = local.cut_set();
+        int kappa = hidden_interference_rank(local, cut);
+        out.max_kappa = std::max(out.max_kappa, kappa);
+
+        FABQNFStats fs;
+        if (is_clifford_poly(local.phase)) {
+            FiberChart ch = build_fiber_chart(local);
+            fs.out_dim = ch.out_dim;
+            fs.hid_dim = ch.hid_dim;
+            fs.rho = 0;
+            fs.table_size = 1;
+        } else {
+            fs = fabqnf_stats(local);
+        }
+
+        out.max_rho = std::max(out.max_rho, fs.rho);
+        if (fs.table_size < 0) ++out.table_failures;
+        else out.sum_table_size += fs.table_size;
+    }
+
+    return out;
+}
+
+} // namespace
+
 LAPH::LAPH(int nqubits)
     : n(nqubits),
       visible(nqubits, AffineForm::constant(false)),
@@ -381,16 +425,32 @@ std::vector<std::vector<int>> LAPH::connected_components() const {
 Stats LAPH::stats() const {
     std::vector<int> cut = cut_set();
     std::vector<std::vector<int>> components = connected_components();
+    bool disconnected = components.size() > 1;
+
+    std::vector<StateComponent> state_comps;
+    ComponentStatsSummary component_summary;
+    if (disconnected) {
+        state_comps = state_components();
+        component_summary = component_fabqnf_summary(*this, state_comps);
+    }
 
     FABQNFStats fs;
-    if (is_clifford_poly(phase)) {
+    int kappa = -1;
+    if (disconnected) {
+        fs.rho = -1;
+        fs.out_dim = -1;
+        fs.hid_dim = -1;
+        fs.table_size = -1;
+    } else if (is_clifford_poly(phase)) {
         FiberChart ch = build_fiber_chart(*this);
         fs.out_dim = ch.out_dim;
         fs.hid_dim = ch.hid_dim;
         fs.rho = 0;
         fs.table_size = 1;
-    } else if (components.size() <= 1 || m <= 5000) {
+        kappa = 0;
+    } else if (m <= 5000) {
         fs = fabqnf_stats(*this);
+        kappa = hidden_interference_rank(*this, cut);
     } else {
         fs.rho = -1;
         fs.out_dim = -1;
@@ -405,13 +465,17 @@ Stats LAPH::stats() const {
         phase.size(),
         scale,
         cut.size(),
-        static_cast<size_t>(hidden_interference_rank(*this, cut)),
+        kappa,
         fs.rho,
         fs.out_dim,
         fs.hid_dim,
         fs.table_size,
         static_cast<size_t>(fs.fiber_active_terms),
         static_cast<size_t>(fs.fiber_active_vars),
+        component_summary.max_rho,
+        component_summary.sum_table_size,
+        component_summary.max_kappa,
+        component_summary.table_failures,
         components.size()
     };
 }
@@ -430,6 +494,10 @@ void LAPH::print_stats() const {
               << " fabqnf_hid_dim=" << s.fabqnf_hid_dim
               << " fabqnf_table_size=" << s.fabqnf_table_size
               << " fiber_active_terms=" << s.fiber_active_terms
+              << " max_component_rho=" << s.max_component_rho
+              << " sum_component_table_size=" << s.sum_component_table_size
+              << " max_component_kappa=" << s.max_component_kappa
+              << " component_table_failures=" << s.component_table_failures
               << " components=" << s.components
               << "\n";
 }

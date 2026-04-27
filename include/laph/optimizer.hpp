@@ -52,13 +52,17 @@ struct Stats {
     size_t phase_terms = 0;
     int hadamard_scale = 0;
     size_t non_clifford_cut = 0;
-    size_t hidden_interference_rank = 0;
+    int hidden_interference_rank = 0;
     int fabqnf_rho = 0;
     int fabqnf_out_dim = 0;
     int fabqnf_hid_dim = 0;
     int fabqnf_table_size = 0;
     size_t fiber_active_terms = 0;
     size_t fiber_active_vars = 0;
+    int max_component_rho = 0;
+    long long sum_component_table_size = 0;
+    int max_component_kappa = 0;
+    int component_table_failures = 0;
     size_t components = 0;
 };
 

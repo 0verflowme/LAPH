@@ -3,10 +3,12 @@
 #include "laph/math/fiber_chart.hpp"
 #include "laph/solver.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <random>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -30,6 +32,9 @@ struct FABQNF {
     std::vector<BitRow> out_x;
     std::vector<BitRow> quotient_rows;
     std::vector<long double> cell_weight;
+    int hidden_partition_evaluations = 0;
+    int hidden_partition_cache_hits = 0;
+    int hidden_partition_cache_entries = 0;
 
     BitRow output_from_t(const BitRow& t) const {
         BitRow x = x0;
@@ -95,8 +100,9 @@ inline bool is_fiber_active(const Monomial& monomial, const FiberChart& ch) {
 }
 
 template <class State>
-std::vector<BitRow> fabqnf_quotient_rows(const State& st, const FiberChart& ch) {
-    std::vector<BitRow> rows;
+std::vector<int> fabqnf_active_factor_variables(const State& st, const FiberChart& ch) {
+    std::vector<uint8_t> seen(ch.m, 0);
+    std::vector<int> vars;
 
     for (const auto& kv : st.phase) {
         const Monomial& monomial = kv.first;
@@ -105,8 +111,45 @@ std::vector<BitRow> fabqnf_quotient_rows(const State& st, const FiberChart& ch) 
         if (!is_fiber_active(monomial, ch)) continue;
 
         for (int v : monomial.v) {
-            if (!ch.var_out[v].empty()) rows.push_back(ch.var_out[v]);
+            if (!seen[v]) {
+                seen[v] = 1;
+                vars.push_back(v);
+            }
         }
+    }
+
+    return vars;
+}
+
+inline std::vector<BitRow> quotient_rows_from_active_factors(
+    const std::vector<int>& active_vars,
+    const FiberChart& ch
+) {
+    if (active_vars.empty()) return {};
+
+    std::vector<BitRow> hidden_equations;
+    hidden_equations.reserve(ch.hid_dim);
+
+    for (int h = 0; h < ch.hid_dim; ++h) {
+        BitRow eq(static_cast<int>(active_vars.size()));
+        for (size_t i = 0; i < active_vars.size(); ++i) {
+            if (ch.var_hid[active_vars[i]].test(h)) eq.set(static_cast<int>(i));
+        }
+        if (!eq.empty()) hidden_equations.push_back(std::move(eq));
+    }
+
+    std::vector<BitRow> hidden_left_nullspace =
+        nullspace(hidden_equations, static_cast<int>(active_vars.size()));
+
+    std::vector<BitRow> rows;
+    rows.reserve(hidden_left_nullspace.size());
+
+    for (const BitRow& alpha : hidden_left_nullspace) {
+        BitRow q(ch.out_dim);
+        for (size_t i = 0; i < active_vars.size(); ++i) {
+            if (alpha.test(static_cast<int>(i))) q.xor_with(ch.var_out[active_vars[i]]);
+        }
+        if (!q.empty()) rows.push_back(std::move(q));
     }
 
     std::vector<uint8_t> rhs(rows.size(), 0);
@@ -117,6 +160,11 @@ std::vector<BitRow> fabqnf_quotient_rows(const State& st, const FiberChart& ch) 
     independent.reserve(rr.rows.size());
     for (const BitRow& r : rr.rows) independent.push_back(r);
     return independent;
+}
+
+template <class State>
+std::vector<BitRow> fabqnf_quotient_rows(const State& st, const FiberChart& ch) {
+    return quotient_rows_from_active_factors(fabqnf_active_factor_variables(st, ch), ch);
 }
 
 struct HiddenPhaseModel {
@@ -154,10 +202,52 @@ struct HiddenPhaseModel {
     ScaledComplex partition_sum() const {
         return exact_partition_sum(vars, phase, constraints);
     }
+
+    std::string canonical_key() const {
+        std::vector<std::string> constraint_keys;
+        constraint_keys.reserve(constraints.size());
+        for (const Constraint& c : constraints) {
+            std::string key = c.rhs ? "1:" : "0:";
+            for (int v : c.lhs.v) {
+                key += std::to_string(v);
+                key.push_back(',');
+            }
+            constraint_keys.push_back(std::move(key));
+        }
+        std::sort(constraint_keys.begin(), constraint_keys.end());
+
+        std::vector<std::string> phase_keys;
+        phase_keys.reserve(phase.size());
+        for (const auto& kv : phase) {
+            int coeff = mod8(kv.second);
+            if (!coeff) continue;
+
+            std::string key = std::to_string(coeff);
+            key.push_back(':');
+            for (int v : kv.first.v) {
+                key += std::to_string(v);
+                key.push_back(',');
+            }
+            phase_keys.push_back(std::move(key));
+        }
+        std::sort(phase_keys.begin(), phase_keys.end());
+
+        std::string key = "v=" + std::to_string(vars) + ";c=";
+        for (const std::string& c : constraint_keys) {
+            key += c;
+            key.push_back(';');
+        }
+        key += "p=";
+        for (const std::string& p : phase_keys) {
+            key += p;
+            key.push_back(';');
+        }
+        return key;
+    }
 };
 
 template <class State>
-ScaledComplex hidden_partition_for_t(
+HiddenPhaseModel build_hidden_phase_model_for_t(
     const State& st,
     const FiberChart& ch,
     const BitRow& t
@@ -190,7 +280,16 @@ ScaledComplex hidden_partition_for_t(
         model.add_phase_monomial(coeff, hidden_factors);
     }
 
-    return model.partition_sum();
+    return model;
+}
+
+template <class State>
+ScaledComplex hidden_partition_for_t(
+    const State& st,
+    const FiberChart& ch,
+    const BitRow& t
+) {
+    return build_hidden_phase_model_for_t(st, ch, t).partition_sum();
 }
 
 template <class State>
@@ -214,6 +313,8 @@ FABQNF build_fabqnf(const State& st) {
     int cell_free_dim = law.out_dim - law.rho;
     long double cell_size = std::ldexp(1.0L, cell_free_dim);
 
+    std::unordered_map<std::string, ScaledComplex> hidden_cache;
+
     for (uint64_t y = 0; y < table_size; ++y) {
         std::vector<BitRow> rows;
         std::vector<uint8_t> rhs;
@@ -231,12 +332,26 @@ FABQNF build_fabqnf(const State& st) {
             continue;
         }
 
-        ScaledComplex raw = hidden_partition_for_t(st, ch, sol.particular);
+        HiddenPhaseModel model = build_hidden_phase_model_for_t(st, ch, sol.particular);
+        std::string key = model.canonical_key();
+        ScaledComplex raw;
+
+        auto cached = hidden_cache.find(key);
+        if (cached == hidden_cache.end()) {
+            raw = model.partition_sum();
+            hidden_cache.emplace(std::move(key), raw);
+            ++law.hidden_partition_evaluations;
+        } else {
+            raw = cached->second;
+            ++law.hidden_partition_cache_hits;
+        }
+
         long double re = raw.real_ld();
         long double im = raw.imag_ld();
         law.cell_weight[y] = (re * re + im * im) * cell_size;
     }
 
+    law.hidden_partition_cache_entries = static_cast<int>(hidden_cache.size());
     return law;
 }
 
@@ -251,18 +366,17 @@ FABQNFStats fabqnf_stats(const State& st) {
     s.rho = static_cast<int>(qrows.size());
     s.table_size = s.rho < FABQNF_MAX_EXACT_RHO ? (1 << s.rho) : -1;
 
-    std::vector<uint8_t> active_var(ch.m, 0);
+    std::vector<int> active_vars = fabqnf_active_factor_variables(st, ch);
+    s.fiber_active_vars = static_cast<int>(active_vars.size());
+
     for (const auto& kv : st.phase) {
         const Monomial& monomial = kv.first;
         int coeff = mod8(kv.second);
-        if (!coeff || monomial.empty()) continue;
-        if (!is_fiber_active(monomial, ch)) continue;
-
-        ++s.fiber_active_terms;
-        for (int v : monomial.v) active_var[v] = 1;
+        if (coeff && !monomial.empty() && is_fiber_active(monomial, ch)) {
+            ++s.fiber_active_terms;
+        }
     }
 
-    for (uint8_t b : active_var) s.fiber_active_vars += b;
     return s;
 }
 

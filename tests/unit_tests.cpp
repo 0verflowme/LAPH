@@ -91,6 +91,64 @@ void assert_distributions_near(
     assert(l1 <= eps);
 }
 
+int conservative_fabqnf_rho(const laph::LAPH& st) {
+    laph::FiberChart ch = laph::build_fiber_chart(st);
+    std::vector<laph::BitRow> rows;
+
+    for (const auto& kv : st.phase) {
+        int coeff = laph::mod8(kv.second);
+        if (!coeff || kv.first.empty()) continue;
+        if (!laph::is_fiber_active(kv.first, ch)) continue;
+
+        for (int v : kv.first.v) {
+            if (!ch.var_out[v].empty()) rows.push_back(ch.var_out[v]);
+        }
+    }
+
+    std::vector<uint8_t> rhs(rows.size(), 0);
+    laph::RrefResult rr = laph::bit_rref(rows, rhs, ch.out_dim);
+    assert(rr.ok);
+    return static_cast<int>(rr.rows.size());
+}
+
+laph::LAPH hidden_translation_reduction_state() {
+    laph::LAPH st(3);
+    st.tableau_valid = false;
+    st.m = 5;
+
+    st.visible[0] = laph::AffineForm(laph::XorSet({0}), false);
+    st.visible[1] = laph::AffineForm(laph::XorSet({0, 1, 2}), false);
+    st.visible[2] = laph::AffineForm(laph::XorSet({1, 2, 4}), false);
+
+    st.add_phase_monomial(1, laph::Monomial::singleton(4));
+    st.add_phase_monomial(1, laph::Monomial::singleton(1));
+    st.add_phase_monomial(2, laph::Monomial::singleton(3));
+
+    st.compress();
+    return st;
+}
+
+laph::LAPH repeated_hidden_packet_state() {
+    laph::LAPH st(3);
+    st.tableau_valid = false;
+
+    int hidden = st.new_var();
+    std::vector<int> out_vars;
+    for (int q = 0; q < 3; ++q) {
+        int v = st.new_var();
+        out_vars.push_back(v);
+        st.visible[q] = laph::AffineForm::variable(v);
+    }
+
+    for (int v : out_vars) {
+        laph::XorSet xs({hidden, v});
+        st.add_phase_product_forms(1, {laph::AffineForm(xs, false)});
+    }
+
+    st.compress();
+    return st;
+}
+
 void test_demo_amplitudes() {
     laph::LAPH st = demo_state();
     long double s = 0.35355339059327376220L;
@@ -252,6 +310,49 @@ void test_fabqnf_hidden_t_matches_amplitudes() {
     assert_distributions_near(exact_distribution(st), fabqnf_distribution(st));
 }
 
+void test_fabqnf_hidden_translation_reduces_rho() {
+    laph::LAPH st = hidden_translation_reduction_state();
+
+    int old_rho = conservative_fabqnf_rho(st);
+    laph::FABQNF law = laph::build_fabqnf(st);
+    laph::FABQNFStats stats = laph::fabqnf_stats(st);
+
+    assert(old_rho == 1);
+    assert(stats.rho == 0);
+    assert(law.rho == 0);
+    assert(law.rho < old_rho);
+
+    assert_distributions_near(exact_distribution(st), fabqnf_distribution(st));
+}
+
+void test_fabqnf_hidden_packet_cache_hits() {
+    laph::LAPH st = repeated_hidden_packet_state();
+    laph::FABQNF law = laph::build_fabqnf(st);
+
+    assert(law.rho == 2);
+    assert(law.hidden_partition_evaluations < static_cast<int>(law.cell_weight.size()));
+    assert(law.hidden_partition_cache_hits > 0);
+    assert(law.hidden_partition_cache_entries == law.hidden_partition_evaluations);
+
+    assert_distributions_near(exact_distribution(st), fabqnf_distribution(st));
+}
+
+void test_disconnected_stats_use_component_local_fabqnf() {
+    laph::LAPH st(4);
+    st.h(0).t(0);
+    st.h(1).t(1);
+    st.compress();
+
+    laph::Stats stats = st.stats();
+    assert(stats.components == 2);
+    assert(stats.hidden_interference_rank == -1);
+    assert(stats.fabqnf_rho == -1);
+    assert(stats.max_component_rho == 0);
+    assert(stats.max_component_kappa == 0);
+    assert(stats.sum_component_table_size == 2);
+    assert(stats.component_table_failures == 0);
+}
+
 void test_fabqnf_random_small_circuits_match_amplitudes() {
     for (uint64_t seed = 0; seed < 25; ++seed) {
         std::mt19937_64 rng(seed);
@@ -291,6 +392,9 @@ int main() {
     test_hidden_interference_rank_distinguishes_output_phase();
     test_fabqnf_output_only_t_has_rho_zero();
     test_fabqnf_hidden_t_matches_amplitudes();
+    test_fabqnf_hidden_translation_reduces_rho();
+    test_fabqnf_hidden_packet_cache_hits();
+    test_disconnected_stats_use_component_local_fabqnf();
     test_fabqnf_random_small_circuits_match_amplitudes();
 
     std::cout << "all LAPH tests passed\n";
