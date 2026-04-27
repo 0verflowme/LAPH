@@ -71,6 +71,14 @@ PYBIND11_MODULE(_laph, m) {
                 return self.exact_sample(rng);
             }
         )
+        .def(
+            "exact_sample_density_oracle",
+            [](const laph::LAPH& self, std::uint64_t seed) {
+                std::mt19937_64 rng(seed);
+                return self.exact_sample_density_oracle(rng);
+            },
+            py::arg("seed")
+        )
         .def("stats", [](const laph::LAPH& self) {
             laph::Stats s = self.stats();
             return py::dict(
@@ -81,6 +89,12 @@ PYBIND11_MODULE(_laph, m) {
                 "hadamard_scale"_a = s.hadamard_scale,
                 "non_clifford_cut"_a = s.non_clifford_cut,
                 "hidden_interference_rank"_a = s.hidden_interference_rank,
+                "fabqnf_rho"_a = s.fabqnf_rho,
+                "fabqnf_out_dim"_a = s.fabqnf_out_dim,
+                "fabqnf_hid_dim"_a = s.fabqnf_hid_dim,
+                "fabqnf_table_size"_a = s.fabqnf_table_size,
+                "fiber_active_terms"_a = s.fiber_active_terms,
+                "fiber_active_vars"_a = s.fiber_active_vars,
                 "components"_a = s.components
             );
         });

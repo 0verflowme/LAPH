@@ -13,16 +13,16 @@ all: $(BUILD_DIR)/laph_demo $(BUILD_DIR)/laph_tests
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-$(BUILD_DIR)/%.o: src/%.cpp include/laph/*.hpp | $(BUILD_DIR)
+$(BUILD_DIR)/%.o: src/%.cpp include/laph/*.hpp include/laph/math/*.hpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/liblaph_core.a: $(CORE_OBJS) | $(BUILD_DIR)
 	ar rcs $@ $(CORE_OBJS)
 
-$(BUILD_DIR)/laph_demo: examples/demo.cpp $(BUILD_DIR)/liblaph_core.a include/laph/*.hpp | $(BUILD_DIR)
+$(BUILD_DIR)/laph_demo: examples/demo.cpp $(BUILD_DIR)/liblaph_core.a include/laph/*.hpp include/laph/math/*.hpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD_DIR)/liblaph_core.a -o $@
 
-$(BUILD_DIR)/laph_tests: tests/unit_tests.cpp $(BUILD_DIR)/liblaph_core.a include/laph/*.hpp | $(BUILD_DIR)
+$(BUILD_DIR)/laph_tests: tests/unit_tests.cpp $(BUILD_DIR)/liblaph_core.a include/laph/*.hpp include/laph/math/*.hpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD_DIR)/liblaph_core.a -o $@
 
 run: $(BUILD_DIR)/laph_demo

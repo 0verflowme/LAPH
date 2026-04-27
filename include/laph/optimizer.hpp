@@ -53,6 +53,12 @@ struct Stats {
     int hadamard_scale = 0;
     size_t non_clifford_cut = 0;
     size_t hidden_interference_rank = 0;
+    int fabqnf_rho = 0;
+    int fabqnf_out_dim = 0;
+    int fabqnf_hid_dim = 0;
+    int fabqnf_table_size = 0;
+    size_t fiber_active_terms = 0;
+    size_t fiber_active_vars = 0;
     size_t components = 0;
 };
 

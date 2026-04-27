@@ -2,6 +2,7 @@
 
 #include "laph/density_kernel.hpp"
 #include "laph/math/born_clifford_sampler.hpp"
+#include "laph/math/fabqnf.hpp"
 #include "laph/math/hidden_rank.hpp"
 #include "laph/phase.hpp"
 
@@ -215,10 +216,15 @@ std::vector<int> LAPH::exact_sample(
     QueryOptions options
 ) const {
     if (is_clifford_poly(phase)) return sample_born_clifford(*this, rng);
-    if (tableau_valid) return tableau.sample_all(rng);
-    if (options.backend == PartitionBackend::Factorized) {
+    if (options.backend == PartitionBackend::Factorized &&
+        connected_components().size() > 1) {
         return exact_sample_by_component(rng, options);
     }
+    return build_fabqnf(*this).sample(rng);
+}
+
+std::vector<int> LAPH::exact_sample_density_oracle(std::mt19937_64& rng) const {
+    if (is_clifford_poly(phase)) return sample_born_clifford(*this, rng);
     return exact_sample_cached_density(*this, rng);
 }
 
@@ -374,6 +380,24 @@ std::vector<std::vector<int>> LAPH::connected_components() const {
 
 Stats LAPH::stats() const {
     std::vector<int> cut = cut_set();
+    std::vector<std::vector<int>> components = connected_components();
+
+    FABQNFStats fs;
+    if (is_clifford_poly(phase)) {
+        FiberChart ch = build_fiber_chart(*this);
+        fs.out_dim = ch.out_dim;
+        fs.hid_dim = ch.hid_dim;
+        fs.rho = 0;
+        fs.table_size = 1;
+    } else if (components.size() <= 1 || m <= 5000) {
+        fs = fabqnf_stats(*this);
+    } else {
+        fs.rho = -1;
+        fs.out_dim = -1;
+        fs.hid_dim = -1;
+        fs.table_size = -1;
+    }
+
     return {
         n,
         m,
@@ -382,7 +406,13 @@ Stats LAPH::stats() const {
         scale,
         cut.size(),
         static_cast<size_t>(hidden_interference_rank(*this, cut)),
-        connected_components().size()
+        fs.rho,
+        fs.out_dim,
+        fs.hid_dim,
+        fs.table_size,
+        static_cast<size_t>(fs.fiber_active_terms),
+        static_cast<size_t>(fs.fiber_active_vars),
+        components.size()
     };
 }
 
@@ -395,6 +425,11 @@ void LAPH::print_stats() const {
               << " hadamard_scale=" << s.hadamard_scale
               << " non_clifford_cut=" << s.non_clifford_cut
               << " hidden_interference_rank=" << s.hidden_interference_rank
+              << " fabqnf_rho=" << s.fabqnf_rho
+              << " fabqnf_out_dim=" << s.fabqnf_out_dim
+              << " fabqnf_hid_dim=" << s.fabqnf_hid_dim
+              << " fabqnf_table_size=" << s.fabqnf_table_size
+              << " fiber_active_terms=" << s.fiber_active_terms
               << " components=" << s.components
               << "\n";
 }

@@ -70,6 +70,14 @@ struct BitRow {
         for (size_t i = 0; i < w.size(); ++i) acc ^= (w[i] & b.w[i]);
         return __builtin_parityll(acc) != 0;
     }
+
+    XorSet to_xorset() const {
+        XorSet out;
+        for (int i = 0; i < n; ++i) {
+            if (test(i)) out.v.push_back(i);
+        }
+        return out;
+    }
 };
 
 struct AffineSystemSolution {

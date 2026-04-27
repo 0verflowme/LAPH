@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "laph/laph.hpp"
+#include "laph/math/fabqnf.hpp"
 
 namespace {
 
@@ -27,6 +28,67 @@ laph::LAPH demo_state() {
     st.h(0).h(1).cnot(0, 2).t(2).cz(0, 1).h(2).ccz(0, 1, 2);
     st.compress();
     return st;
+}
+
+uint64_t bitrow_value(const laph::BitRow& row) {
+    uint64_t value = 0;
+    for (int i = 0; i < row.n; ++i) {
+        if (row.test(i)) value |= (1ull << i);
+    }
+    return value;
+}
+
+laph::BitRow bitrow_from_value(int nbits, uint64_t value) {
+    laph::BitRow row(nbits);
+    for (int i = 0; i < nbits; ++i) {
+        if ((value >> i) & 1ull) row.set(i);
+    }
+    return row;
+}
+
+std::vector<long double> exact_distribution(laph::LAPH& st) {
+    std::vector<long double> dist(1ull << st.n, 0.0L);
+    long double total = 0.0L;
+
+    for (uint64_t x = 0; x < dist.size(); ++x) {
+        laph::ScaledComplex amp = st.amplitude_factorized(x);
+        long double p = amp.real_ld() * amp.real_ld() + amp.imag_ld() * amp.imag_ld();
+        dist[x] = p;
+        total += p;
+    }
+
+    for (long double& p : dist) p /= total;
+    return dist;
+}
+
+std::vector<long double> fabqnf_distribution(const laph::LAPH& st) {
+    laph::FABQNF law = laph::build_fabqnf(st);
+    std::vector<long double> dist(1ull << st.n, 0.0L);
+    long double total = 0.0L;
+    long double cell_size = std::ldexp(1.0L, law.out_dim - law.rho);
+
+    for (uint64_t tv = 0; tv < (1ull << law.out_dim); ++tv) {
+        laph::BitRow t = bitrow_from_value(law.out_dim, tv);
+        uint64_t y = law.quotient_value(t);
+        long double w = law.cell_weight[y] / cell_size;
+        uint64_t x = bitrow_value(law.output_from_t(t));
+        dist[x] += w;
+        total += w;
+    }
+
+    for (long double& p : dist) p /= total;
+    return dist;
+}
+
+void assert_distributions_near(
+    const std::vector<long double>& a,
+    const std::vector<long double>& b,
+    long double eps = 1e-8L
+) {
+    assert(a.size() == b.size());
+    long double l1 = 0.0L;
+    for (size_t i = 0; i < a.size(); ++i) l1 += std::fabsl(a[i] - b[i]);
+    assert(l1 <= eps);
 }
 
 void test_demo_amplitudes() {
@@ -167,6 +229,54 @@ void test_hidden_interference_rank_distinguishes_output_phase() {
     assert(hidden_stats.hidden_interference_rank == 1);
 }
 
+void test_fabqnf_output_only_t_has_rho_zero() {
+    laph::LAPH st(1);
+    st.h(0).t(0);
+    st.compress();
+
+    laph::FABQNFStats stats = laph::fabqnf_stats(st);
+    assert(stats.rho == 0);
+    assert(stats.fiber_active_terms == 0);
+
+    assert_distributions_near(exact_distribution(st), fabqnf_distribution(st));
+}
+
+void test_fabqnf_hidden_t_matches_amplitudes() {
+    laph::LAPH st(2);
+    st.h(0).h(1).cnot(0, 1).t(1).h(1);
+    st.compress();
+
+    laph::FABQNFStats stats = laph::fabqnf_stats(st);
+    assert(stats.rho < 4);
+
+    assert_distributions_near(exact_distribution(st), fabqnf_distribution(st));
+}
+
+void test_fabqnf_random_small_circuits_match_amplitudes() {
+    for (uint64_t seed = 0; seed < 25; ++seed) {
+        std::mt19937_64 rng(seed);
+        laph::LAPH st(4);
+
+        for (int layer = 0; layer < 6; ++layer) {
+            for (int q = 0; q < 4; ++q) {
+                uint64_t g = rng() % 5;
+                if (g == 0) st.h(q);
+                else if (g == 1) st.s(q);
+                else if (g == 2) st.z(q);
+                else if (g == 3) st.x(q);
+                else st.t(q);
+            }
+
+            int c = static_cast<int>(rng() % 4);
+            int t = static_cast<int>((c + 1 + (rng() % 3)) % 4);
+            st.cnot(c, t);
+        }
+
+        st.compress();
+        assert_distributions_near(exact_distribution(st), fabqnf_distribution(st), 1e-7L);
+    }
+}
+
 } // namespace
 
 int main() {
@@ -179,6 +289,9 @@ int main() {
     test_tableau_deterministic_paulis();
     test_non_clifford_invalidates_tableau();
     test_hidden_interference_rank_distinguishes_output_phase();
+    test_fabqnf_output_only_t_has_rho_zero();
+    test_fabqnf_hidden_t_matches_amplitudes();
+    test_fabqnf_random_small_circuits_match_amplitudes();
 
     std::cout << "all LAPH tests passed\n";
 }

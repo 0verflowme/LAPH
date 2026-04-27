@@ -73,6 +73,7 @@ public:
     std::vector<int> exact_sample(std::mt19937_64& rng, QueryOptions options = {}) const;
     std::vector<int> exact_sample_monolithic(std::mt19937_64& rng) const;
     std::vector<int> exact_sample_factorized(std::mt19937_64& rng) const;
+    std::vector<int> exact_sample_density_oracle(std::mt19937_64& rng) const;
 
     std::vector<StateComponent> state_components() const;
     LAPH component_view(const StateComponent& component) const;
