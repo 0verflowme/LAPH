@@ -111,6 +111,44 @@ void test_component_sampler_keeps_constants() {
     assert(sample[3] == 1);
 }
 
+void test_tableau_bell_sampler() {
+    for (uint64_t seed = 0; seed < 16; ++seed) {
+        laph::LAPH st(2);
+        st.h(0).cnot(0, 1);
+
+        assert(st.tableau_valid);
+        std::mt19937_64 rng(seed);
+        auto sample = st.exact_sample(rng);
+
+        assert(sample.size() == 2);
+        assert(sample[0] == sample[1]);
+    }
+}
+
+void test_tableau_deterministic_paulis() {
+    laph::LAPH st(3);
+    st.x(0).h(1).cnot(1, 2);
+
+    for (uint64_t seed = 0; seed < 16; ++seed) {
+        std::mt19937_64 rng(seed);
+        auto sample = st.exact_sample(rng);
+
+        assert(sample[0] == 1);
+        assert(sample[1] == sample[2]);
+    }
+}
+
+void test_non_clifford_invalidates_tableau() {
+    laph::LAPH st(1);
+    st.h(0).t(0);
+    assert(!st.tableau_valid);
+
+    std::mt19937_64 rng(4);
+    auto sample = st.exact_sample(rng);
+    assert(sample.size() == 1);
+    assert(sample[0] == 0 || sample[0] == 1);
+}
+
 } // namespace
 
 int main() {
@@ -119,6 +157,9 @@ int main() {
     test_clifford_cut_zero();
     test_exact_sample_shape();
     test_component_sampler_keeps_constants();
+    test_tableau_bell_sampler();
+    test_tableau_deterministic_paulis();
+    test_non_clifford_invalidates_tableau();
 
     std::cout << "all LAPH tests passed\n";
 }

@@ -1,5 +1,7 @@
 #include "laph/laph.hpp"
 
+#include "laph/density_kernel.hpp"
+
 #include <algorithm>
 #include <iostream>
 #include <map>
@@ -8,7 +10,9 @@
 namespace laph {
 
 LAPH::LAPH(int nqubits)
-    : n(nqubits), visible(nqubits, AffineForm::constant(false)) {}
+    : n(nqubits),
+      visible(nqubits, AffineForm::constant(false)),
+      tableau(nqubits) {}
 
 int LAPH::new_var() {
     return m++;
@@ -47,16 +51,19 @@ void LAPH::add_phase_product_forms(int coeff, const std::vector<AffineForm>& for
 }
 
 LAPH& LAPH::x(int q) {
+    if (tableau_valid) tableau.x_gate(q);
     visible[q].c ^= true;
     return *this;
 }
 
 LAPH& LAPH::cnot(int c, int t) {
+    if (tableau_valid) tableau.cnot(c, t);
     visible[t].xor_with(visible[c]);
     return *this;
 }
 
 LAPH& LAPH::h(int q) {
+    if (tableau_valid) tableau.h(q);
     AffineForm old = visible[q];
     int s = new_var();
     add_phase_product_forms(4, {AffineForm::variable(s), old});
@@ -66,26 +73,31 @@ LAPH& LAPH::h(int q) {
 }
 
 LAPH& LAPH::t(int q) {
+    tableau_valid = false;
     add_phase_product_forms(1, {visible[q]});
     return *this;
 }
 
 LAPH& LAPH::s(int q) {
+    if (tableau_valid) tableau.s(q);
     add_phase_product_forms(2, {visible[q]});
     return *this;
 }
 
 LAPH& LAPH::z(int q) {
+    if (tableau_valid) tableau.z_gate(q);
     add_phase_product_forms(4, {visible[q]});
     return *this;
 }
 
 LAPH& LAPH::cz(int a, int b) {
+    if (tableau_valid) tableau.cz(a, b);
     add_phase_product_forms(4, {visible[a], visible[b]});
     return *this;
 }
 
 LAPH& LAPH::ccz(int a, int b, int c) {
+    tableau_valid = false;
     add_phase_product_forms(4, {visible[a], visible[b], visible[c]});
     return *this;
 }
@@ -199,27 +211,11 @@ std::vector<int> LAPH::exact_sample(
     std::mt19937_64& rng,
     QueryOptions options
 ) const {
-    std::vector<std::pair<int, bool>> prefix;
-    prefix.reserve(n);
-    std::vector<int> sample(n, 0);
-    long double prefix_prob = probability_prefix(prefix, options);
-    if (prefix_prob <= 0) throw std::runtime_error("state has zero norm");
-
-    std::uniform_real_distribution<long double> U(0.0L, 1.0L);
-    for (int q = 0; q < n; ++q) {
-        auto pref0 = prefix;
-        pref0.push_back({q, false});
-        long double p0_abs = probability_prefix(pref0, options);
-        long double p0_cond = p0_abs / prefix_prob;
-        if (p0_cond < 0) p0_cond = 0;
-        if (p0_cond > 1) p0_cond = 1;
-        bool bit = !(U(rng) < p0_cond);
-        prefix.push_back({q, bit});
-        sample[q] = bit ? 1 : 0;
-        prefix_prob = bit ? (prefix_prob - p0_abs) : p0_abs;
-        if (prefix_prob < 0 && prefix_prob > -1e-12L) prefix_prob = 0;
+    if (tableau_valid) return tableau.sample_all(rng);
+    if (options.backend == PartitionBackend::Factorized) {
+        return exact_sample_by_component(rng, options);
     }
-    return sample;
+    return exact_sample_cached_density(*this, rng);
 }
 
 std::vector<int> LAPH::exact_sample_monolithic(std::mt19937_64& rng) const {
@@ -252,6 +248,7 @@ std::vector<StateComponent> LAPH::state_components() const {
 LAPH LAPH::component_view(const StateComponent& component) const {
     LAPH local(static_cast<int>(component.qubits.size()));
     local.m = static_cast<int>(component.variables.size());
+    local.tableau_valid = false;
 
     std::vector<int> local_index(std::max(0, m), -1);
     for (size_t i = 0; i < component.variables.size(); ++i) {
@@ -284,8 +281,10 @@ LAPH LAPH::component_view(const StateComponent& component) const {
 
 std::vector<int> LAPH::exact_sample_by_component(
     std::mt19937_64& rng,
-    QueryOptions options
+    QueryOptions
 ) const {
+    if (tableau_valid) return tableau.sample_all(rng);
+
     for (const Constraint& c : constraints) {
         if (c.lhs.empty() && c.rhs) throw std::runtime_error("state has zero norm");
     }
@@ -295,32 +294,14 @@ std::vector<int> LAPH::exact_sample_by_component(
         if (visible[q].vars.empty()) sample[q] = visible[q].c ? 1 : 0;
     }
 
-    std::uniform_real_distribution<long double> U(0.0L, 1.0L);
-
     for (const StateComponent& component : state_components()) {
         if (component.qubits.empty()) continue;
 
         LAPH local = component_view(component);
-        std::vector<std::pair<int, bool>> prefix;
-        prefix.reserve(local.n);
-
-        long double prefix_weight = local.density_prefix_weight(prefix, options);
-        if (prefix_weight <= 0) throw std::runtime_error("component has zero norm");
+        std::vector<int> local_sample = exact_sample_cached_density(local, rng);
 
         for (int local_q = 0; local_q < local.n; ++local_q) {
-            auto pref0 = prefix;
-            pref0.push_back({local_q, false});
-
-            long double p0_weight = local.density_prefix_weight(pref0, options);
-            long double p0_cond = p0_weight / prefix_weight;
-            if (p0_cond < 0) p0_cond = 0;
-            if (p0_cond > 1) p0_cond = 1;
-
-            bool bit = !(U(rng) < p0_cond);
-            prefix.push_back({local_q, bit});
-            sample[component.qubits[local_q]] = bit ? 1 : 0;
-            prefix_weight = bit ? (prefix_weight - p0_weight) : p0_weight;
-            if (prefix_weight < 0 && prefix_weight > -1e-12L) prefix_weight = 0;
+            sample[component.qubits[local_q]] = local_sample[local_q];
         }
     }
 

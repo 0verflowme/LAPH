@@ -4,6 +4,7 @@
 
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace laph {
 
@@ -15,6 +16,10 @@ bool is_clifford_poly(const PhasePoly& poly);
 PhasePoly substitute_clifford_poly(
     const PhasePoly& poly,
     const std::unordered_map<int, AffineForm>& exprs
+);
+PhasePoly substitute_clifford_poly_vec(
+    const PhasePoly& poly,
+    const std::vector<AffineForm>& exprs
 );
 ScaledComplex clifford_sum(PhasePoly poly, int nvars);
 

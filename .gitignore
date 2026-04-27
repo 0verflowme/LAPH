@@ -1,5 +1,6 @@
 build/
 build-cmake/
+.venv/
 _skbuild/
 dist/
 benchmark_results/

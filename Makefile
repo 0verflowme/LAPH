@@ -5,7 +5,7 @@ BUILD_DIR ?= build
 
 .PHONY: all run test clean
 
-CORE_SRCS := src/solver.cpp src/phase.cpp src/optimizer.cpp src/laph.cpp
+CORE_SRCS := src/solver.cpp src/phase.cpp src/optimizer.cpp src/gf2_dense.cpp src/density_kernel.cpp src/clifford_tableau.cpp src/laph.cpp
 CORE_OBJS := $(CORE_SRCS:src/%.cpp=$(BUILD_DIR)/%.o)
 
 all: $(BUILD_DIR)/laph_demo $(BUILD_DIR)/laph_tests

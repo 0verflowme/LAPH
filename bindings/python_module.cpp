@@ -56,7 +56,7 @@ PYBIND11_MODULE(_laph, m) {
             "exact_sample",
             [](const laph::LAPH& self, std::uint64_t seed) {
                 std::mt19937_64 rng(seed);
-                return self.exact_sample_by_component(rng);
+                return self.exact_sample(rng);
             },
             py::arg("seed")
         )
@@ -68,7 +68,7 @@ PYBIND11_MODULE(_laph, m) {
                     (static_cast<std::uint64_t>(rd()) << 32) ^
                     static_cast<std::uint64_t>(rd())
                 );
-                return self.exact_sample_by_component(rng);
+                return self.exact_sample(rng);
             }
         )
         .def("stats", [](const laph::LAPH& self) {

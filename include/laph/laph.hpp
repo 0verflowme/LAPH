@@ -1,5 +1,6 @@
 #pragma once
 
+#include "laph/clifford_tableau.hpp"
 #include "laph/optimizer.hpp"
 
 #include <cstdint>
@@ -19,6 +20,8 @@ public:
     std::vector<Constraint> constraints;
     PhasePoly phase;
     int scale = 0;
+    CliffordTableau tableau;
+    bool tableau_valid = true;
     std::unordered_map<AffineForm, int, AffineHash> lift_cache;
 
     explicit LAPH(int nqubits);

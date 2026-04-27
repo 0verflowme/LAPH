@@ -252,4 +252,39 @@ PhasePoly substitute_clifford_poly(const PhasePoly& poly, const std::unordered_m
     return out;
 }
 
+PhasePoly substitute_clifford_poly_vec(
+    const PhasePoly& poly,
+    const std::vector<AffineForm>& exprs
+) {
+    PhasePoly out;
+    for (const auto& kv : poly) {
+        const Monomial& m = kv.first;
+        int c = mod8(kv.second);
+        if (c == 0) continue;
+        size_t deg = m.degree();
+        if (deg == 0) {
+            add_mod8(out, Monomial::constant(), c);
+        } else if (deg == 1) {
+            int x = m.v[0];
+            if (x < 0 || x >= static_cast<int>(exprs.size())) {
+                throw std::runtime_error("missing expression");
+            }
+            add_affine_phase(out, c, exprs[x].vars, exprs[x].c);
+        } else if (deg == 2 && c % 4 == 0) {
+            int x = m.v[0];
+            int y = m.v[1];
+            if (x < 0 || y < 0 ||
+                x >= static_cast<int>(exprs.size()) ||
+                y >= static_cast<int>(exprs.size())) {
+                throw std::runtime_error("missing expression");
+            }
+            ANF prod = anf_mul(anf_affine(exprs[x]), anf_affine(exprs[y]));
+            for (const auto& mon : prod) add_mod8(out, mon, c);
+        } else {
+            throw std::runtime_error("non-Clifford residual term after cut");
+        }
+    }
+    return out;
+}
+
 } // namespace laph

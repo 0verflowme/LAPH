@@ -158,7 +158,14 @@ def print_row(row: dict):
 
 def main():
     parser = argparse.ArgumentParser(description="Benchmark the LAPH Qiskit backend.")
+    parser.add_argument("--smoke", action="store_true")
+    parser.add_argument(
+        "--family",
+        choices=["connected_clifford", "connected_sparse_t", "disconnected_sparse_t"],
+    )
+    parser.add_argument("--qubits", nargs="+", type=int)
     parser.add_argument("--widths", default="4,8,12,16,24,32")
+    parser.add_argument("--depth", type=int)
     parser.add_argument("--depths", default="4,8,16")
     parser.add_argument("--trials", type=int, default=1)
     parser.add_argument("--shots", type=int, default=1)
@@ -169,10 +176,31 @@ def main():
     parser.add_argument("--case-timeout", type=float, default=0.0)
     parser.add_argument("--stop-after-slow", type=int, default=2)
     parser.add_argument("--output", default="benchmark_results/laph_benchmark.csv")
+    default_output = parser.get_default("output")
     args = parser.parse_args()
 
-    widths = parse_int_list(args.widths)
-    depths = parse_int_list(args.depths)
+    if args.smoke:
+        args.widths = "4,8"
+        args.depths = "4"
+        args.trials = 1
+        args.shots = 1
+        args.t_probability = 0.1
+        args.entangle = "chain"
+        if args.output == default_output:
+            args.output = "benchmark_results/smoke.csv"
+
+    if args.family == "connected_clifford":
+        args.t_probability = 0.0
+        args.entangle = "chain"
+    elif args.family == "connected_sparse_t":
+        args.t_probability = 0.05
+        args.entangle = "chain"
+    elif args.family == "disconnected_sparse_t":
+        args.t_probability = 0.05
+        args.entangle = "none"
+
+    widths = args.qubits if args.qubits is not None else parse_int_list(args.widths)
+    depths = [args.depth] if args.depth is not None else parse_int_list(args.depths)
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
 

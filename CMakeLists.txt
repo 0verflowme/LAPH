@@ -13,6 +13,9 @@ add_library(laph_core
     src/solver.cpp
     src/phase.cpp
     src/optimizer.cpp
+    src/gf2_dense.cpp
+    src/density_kernel.cpp
+    src/clifford_tableau.cpp
     src/laph.cpp
 )
 target_compile_features(laph_core PUBLIC cxx_std_17)
