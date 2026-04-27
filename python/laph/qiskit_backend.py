@@ -15,6 +15,62 @@ from qiskit.transpiler import Target
 from ._laph import LAPH
 
 
+def build_laph_from_circuit(circuit: QuantumCircuit):
+    """Translate a supported Qiskit circuit into a compressed LAPH state."""
+    sim = LAPH(circuit.num_qubits)
+    measure_map: list[tuple[int, int]] = []
+
+    for instruction in circuit.data:
+        operation = instruction.operation
+        name = operation.name
+        qubits = [circuit.find_bit(qubit).index for qubit in instruction.qubits]
+        clbits = [circuit.find_bit(clbit).index for clbit in instruction.clbits]
+
+        if name == "x":
+            sim.x(qubits[0])
+        elif name == "h":
+            sim.h(qubits[0])
+        elif name == "t":
+            sim.t(qubits[0])
+        elif name == "s":
+            sim.s(qubits[0])
+        elif name == "z":
+            sim.z(qubits[0])
+        elif name == "cx":
+            sim.cnot(qubits[0], qubits[1])
+        elif name == "cz":
+            sim.cz(qubits[0], qubits[1])
+        elif name == "ccz":
+            sim.ccz(qubits[0], qubits[1], qubits[2])
+        elif name == "measure":
+            measure_map.append((qubits[0], clbits[0]))
+        elif name in {"barrier", "delay"}:
+            continue
+        else:
+            raise NotImplementedError(f"LAPHBackend does not support instruction {name!r}")
+
+    sim.compress()
+    return sim, measure_map
+
+
+def sample_laph_counts(
+    sim: LAPH,
+    measure_map: list[tuple[int, int]],
+    num_clbits: int,
+    shots: int,
+    seed: int | None = None,
+):
+    rng = random.Random(seed)
+    counts = Counter()
+
+    for _ in range(shots):
+        shot_seed = rng.getrandbits(64)
+        sample = sim.exact_sample(shot_seed)
+        counts[LAPHBackend.format_memory(sample, measure_map, num_clbits)] += 1
+
+    return counts
+
+
 class LAPHJob(JobV1):
     """Synchronous Qiskit job wrapper for an already-computed LAPH result."""
 
@@ -92,56 +148,25 @@ class LAPHBackend(BackendV2):
         return LAPHJob(self, "laph-job-0", result)
 
     def _run_circuit(self, circuit: QuantumCircuit, shots: int, rng: random.Random, seed):
-        sim = LAPH(circuit.num_qubits)
-        measure_map: list[tuple[int, int]] = []
-
-        for instruction in circuit.data:
-            operation = instruction.operation
-            name = operation.name
-            qubits = [circuit.find_bit(qubit).index for qubit in instruction.qubits]
-            clbits = [circuit.find_bit(clbit).index for clbit in instruction.clbits]
-
-            if name == "x":
-                sim.x(qubits[0])
-            elif name == "h":
-                sim.h(qubits[0])
-            elif name == "t":
-                sim.t(qubits[0])
-            elif name == "s":
-                sim.s(qubits[0])
-            elif name == "z":
-                sim.z(qubits[0])
-            elif name == "cx":
-                sim.cnot(qubits[0], qubits[1])
-            elif name == "cz":
-                sim.cz(qubits[0], qubits[1])
-            elif name == "ccz":
-                sim.ccz(qubits[0], qubits[1], qubits[2])
-            elif name == "measure":
-                measure_map.append((qubits[0], clbits[0]))
-            elif name in {"barrier", "delay"}:
-                continue
-            else:
-                raise NotImplementedError(f"LAPHBackend does not support instruction {name!r}")
-
-        sim.compress()
-        counts = Counter()
-
-        for _ in range(shots):
-            shot_seed = rng.getrandbits(64)
-            sample = sim.exact_sample(shot_seed)
-            counts[self._format_memory(sample, measure_map, circuit.num_clbits)] += 1
+        sim, measure_map = build_laph_from_circuit(circuit)
+        counts = sample_laph_counts(
+            sim,
+            measure_map,
+            circuit.num_clbits,
+            shots,
+            seed=rng.getrandbits(64),
+        )
 
         return ExperimentResult(
             shots=shots,
             success=True,
             data=ExperimentResultData(counts=dict(counts)),
             seed=seed,
-            header={"name": circuit.name},
+            header={"name": circuit.name, "laph_stats": sim.stats()},
         )
 
     @staticmethod
-    def _format_memory(sample: list[int], measure_map: list[tuple[int, int]], num_clbits: int):
+    def format_memory(sample: list[int], measure_map: list[tuple[int, int]], num_clbits: int):
         if not measure_map:
             return "".join(str(bit) for bit in reversed(sample))
 

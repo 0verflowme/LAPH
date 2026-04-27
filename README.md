@@ -128,6 +128,21 @@ job = backend.run(compiled, shots=1000, seed_simulator=123)
 print(job.result().get_counts())
 ```
 
+## Benchmarking
+
+```bash
+python scripts/benchmark.py \
+  --widths 32,64,128,256 \
+  --depths 8 \
+  --shots 1 \
+  --t-probability 0.05 \
+  --entangle chain
+```
+
+The benchmark emits CSV rows with graph statistics and timing split across
+generation, transpilation, LAPH build/compress, direct sampling, and backend
+end-to-end execution.
+
 ## Notes
 
 The current implementation is still intentionally sparse and clarity-oriented.

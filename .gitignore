@@ -2,6 +2,7 @@ build/
 build-cmake/
 _skbuild/
 dist/
+benchmark_results/
 *.egg-info/
 python/laph/_laph*.so
 python/laph/_laph*.pyd
