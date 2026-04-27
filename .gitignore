@@ -1,0 +1,9 @@
+build/
+build-cmake/
+laph_cpp_v02/
+*.o
+*.out
+*.a
+*.so
+*.dylib
+*.exe
