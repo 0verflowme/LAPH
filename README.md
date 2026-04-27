@@ -59,6 +59,12 @@ pip install .
 python -c "import laph; print(laph.LAPH(1).h(0).stats())"
 ```
 
+Install the optional Qiskit adapter with:
+
+```bash
+pip install ".[qiskit]"
+```
+
 ## Minimal use
 
 ```cpp
@@ -103,6 +109,23 @@ print(st.stats())
 print(st.exact_sample(seed=123))
 amp = st.amplitude(0b001)
 print(amp.real(), amp.imag())
+```
+
+## Qiskit Use
+
+```python
+from qiskit import QuantumCircuit, transpile
+from laph.qiskit_backend import LAPHBackend
+
+qc = QuantumCircuit(2, 2)
+qc.h(0)
+qc.cx(0, 1)
+qc.measure([0, 1], [0, 1])
+
+backend = LAPHBackend(num_qubits=2)
+compiled = transpile(qc, backend)
+job = backend.run(compiled, shots=1000, seed_simulator=123)
+print(job.result().get_counts())
 ```
 
 ## Notes
