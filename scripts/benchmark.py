@@ -148,7 +148,8 @@ def run_case(args, nqubits: int, depth: int, trial: int):
 def print_row(row: dict):
     print(
         "n={nqubits:4d} depth={depth:4d} trial={trial:2d} "
-        "tau={non_clifford_cut:3d} m={latent_variables:6d} "
+        "tau={non_clifford_cut:3d} kappa={hidden_interference_rank:3d} "
+        "m={latent_variables:6d} "
         "constraints={constraints:6d} terms={phase_terms:6d} comps={components:4d} "
         "build={build_compress_s:8.4f}s sample_mean={sample_mean_s:8.4f}s "
         "backend={backend_run_s:8.4f}s".format(**row),

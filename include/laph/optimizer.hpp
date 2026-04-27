@@ -52,6 +52,7 @@ struct Stats {
     size_t phase_terms = 0;
     int hadamard_scale = 0;
     size_t non_clifford_cut = 0;
+    size_t hidden_interference_rank = 0;
     size_t components = 0;
 };
 

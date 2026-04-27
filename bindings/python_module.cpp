@@ -80,6 +80,7 @@ PYBIND11_MODULE(_laph, m) {
                 "phase_terms"_a = s.phase_terms,
                 "hadamard_scale"_a = s.hadamard_scale,
                 "non_clifford_cut"_a = s.non_clifford_cut,
+                "hidden_interference_rank"_a = s.hidden_interference_rank,
                 "components"_a = s.components
             );
         });

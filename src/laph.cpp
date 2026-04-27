@@ -1,6 +1,9 @@
 #include "laph/laph.hpp"
 
 #include "laph/density_kernel.hpp"
+#include "laph/math/born_clifford_sampler.hpp"
+#include "laph/math/hidden_rank.hpp"
+#include "laph/phase.hpp"
 
 #include <algorithm>
 #include <iostream>
@@ -211,6 +214,7 @@ std::vector<int> LAPH::exact_sample(
     std::mt19937_64& rng,
     QueryOptions options
 ) const {
+    if (is_clifford_poly(phase)) return sample_born_clifford(*this, rng);
     if (tableau_valid) return tableau.sample_all(rng);
     if (options.backend == PartitionBackend::Factorized) {
         return exact_sample_by_component(rng, options);
@@ -298,7 +302,8 @@ std::vector<int> LAPH::exact_sample_by_component(
         if (component.qubits.empty()) continue;
 
         LAPH local = component_view(component);
-        std::vector<int> local_sample = exact_sample_cached_density(local, rng);
+        std::vector<int> local_sample =
+            local.exact_sample(rng, QueryOptions{PartitionBackend::Monolithic});
 
         for (int local_q = 0; local_q < local.n; ++local_q) {
             sample[component.qubits[local_q]] = local_sample[local_q];
@@ -368,13 +373,15 @@ std::vector<std::vector<int>> LAPH::connected_components() const {
 }
 
 Stats LAPH::stats() const {
+    std::vector<int> cut = cut_set();
     return {
         n,
         m,
         constraints.size(),
         phase.size(),
         scale,
-        cut_set().size(),
+        cut.size(),
+        static_cast<size_t>(hidden_interference_rank(*this, cut)),
         connected_components().size()
     };
 }
@@ -387,6 +394,7 @@ void LAPH::print_stats() const {
               << " phase_terms=" << s.phase_terms
               << " hadamard_scale=" << s.hadamard_scale
               << " non_clifford_cut=" << s.non_clifford_cut
+              << " hidden_interference_rank=" << s.hidden_interference_rank
               << " components=" << s.components
               << "\n";
 }
